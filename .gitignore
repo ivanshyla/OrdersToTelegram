@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# Logs
+*.log
+crm-watcher/*.log
+crm-watcher/debug/*.png
+crm-watcher/debug/*.json
+crm-watcher/run_artifacts/*.png
+
+# Secrets
+crm-watcher/storage_state.json
+crm-watcher/multi_crm_config.py
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Launchd
+*.plist
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+
