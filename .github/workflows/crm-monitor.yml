@@ -84,7 +84,7 @@ jobs:
                   "password": os.environ.get("WARSAW_PASSWORD"),
                   "telegram_chat_id": os.environ.get("WARSAW_CHAT_ID"),
                   "timezone": "Europe/Warsaw",
-                  "notification_hours": [7, 19, 20, 21],
+                  "notification_hours": [7, 11, 19, 20, 21],
                   "enabled": True
               },
               "berlin": {
@@ -95,7 +95,7 @@ jobs:
                   "password": os.environ.get("BERLIN_PASSWORD"),
                   "telegram_chat_id": os.environ.get("BERLIN_CHAT_ID"),
                   "timezone": "Europe/Berlin", 
-                  "notification_hours": [7, 19, 20, 21],
+                  "notification_hours": [7, 11, 19, 20, 21],
                   "enabled": True
               }
           }
