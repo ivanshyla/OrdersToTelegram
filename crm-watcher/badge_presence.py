@@ -80,7 +80,10 @@ def detect_badge_presence(img_bgr, date_bbox, debug=False):
 
     # находим компоненты и проверяем «достаточно крупную» рядом с датой
     cnts,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    min_area = max(100, int(0.12*h*h))  # минимальная площадь - делаем более чувствительным
+    
+    # Ужесточаем критерии - badge должен быть маленьким и компактным
+    min_area = max(150, int(0.15*h*h))  # увеличена минимальная площадь
+    max_area = int(2.0*h*h)  # максимальная площадь - badge не может быть очень большим
     
     present = False
     best = None
@@ -91,9 +94,14 @@ def detect_badge_presence(img_bgr, date_bbox, debug=False):
         area = rw*rh
         aspect = rw/max(1,rh)
         
-        if area < min_area: 
+        # Badge обычно маленький и круглый/квадратный
+        if area < min_area or area > max_area: 
             continue
-        if not (0.3 <= aspect <= 6.0):  # широкий диапазон пропорций
+        if not (0.5 <= aspect <= 2.5):  # badge более компактный
+            continue
+        
+        # Badge обычно имеет размер примерно с высоту даты
+        if rw > h*2 or rh > h*2:  # не больше 2x высоты даты
             continue
             
         # проверяем что компонент справа от даты
@@ -101,8 +109,13 @@ def detect_badge_presence(img_bgr, date_bbox, debug=False):
         date_right = x + w
         dist_x = comp_center_x - date_right
         
-        # Должен быть справа от даты и в разумных пределах
-        if dist_x < 0 or dist_x > w*4:
+        # Должен быть БЛИЗКО справа от даты (badge всегда рядом с датой)
+        if dist_x < 0 or dist_x > w*2.5:  # сузили диапазон
+            continue
+        
+        # Требуем достаточное количество красных пикселей (компактность)
+        contour_area = cv2.contourArea(c)
+        if contour_area < min_area * 0.4:  # компонент должен быть достаточно заполненным
             continue
         
         # приоритет ближайшему крупному компоненту
