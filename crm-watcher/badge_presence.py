@@ -66,11 +66,12 @@ def detect_badge_presence(img_bgr, date_bbox, debug=False):
     H,W = img_bgr.shape[:2]
     x,y,w,h = date_bbox
 
-    # ШИРОКАЯ полоса строки даты: справа от даты до правого края
-    y1 = max(0, int(y - 2.5*h))
-    y2 = min(H, int(y + 4.0*h))
-    x1 = max(0, int(x + 0.1*w))
-    x2 = W
+    # УЗКАЯ полоса ТОЛЬКО для этой конкретной даты
+    # Badge всегда очень близко к своей дате, не уходит далеко
+    y1 = max(0, int(y - 0.5*h))  # совсем немного сверху
+    y2 = min(H, int(y + 1.5*h))  # совсем немного снизу
+    x1 = max(0, int(x + 0.8*w))  # начинаем почти от конца даты
+    x2 = min(W, int(x + w + w*3))  # не дальше 3x ширины даты справа
 
     roi = img_bgr[y1:y2, x1:x2]
     mask = red_mask_union(roi)
