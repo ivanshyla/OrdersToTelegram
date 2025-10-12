@@ -25,30 +25,21 @@ def find_date_bbox(img_bgr, date_text):
             best=_bbox_from_quad(box); best_conf=conf
     return best
 
-def has_red_background(img_bgr, text_bbox):
-    """Проверяет, есть ли КРАСНЫЙ ФОН вокруг текста (badge)"""
+def is_text_red(img_bgr, text_bbox):
+    """Проверяет, является ли текст красным"""
     x, y, w, h = text_bbox
+    roi = img_bgr[y:y+h, x:x+w]
     
-    # Расширяем область вокруг текста чтобы захватить фон badge
-    padding = max(5, int(h * 0.3))
-    x1 = max(0, x - padding)
-    y1 = max(0, y - padding)
-    x2 = min(img_bgr.shape[1], x + w + padding)
-    y2 = min(img_bgr.shape[0], y + h + padding)
-    
-    roi = img_bgr[y1:y2, x1:x2]
-    
-    # HSV маска для красного ФОНА
+    # HSV маска для красного
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    m1 = cv2.inRange(hsv, np.array([0, 80, 80]), np.array([15, 255, 255]))
-    m2 = cv2.inRange(hsv, np.array([165, 80, 80]), np.array([180, 255, 255]))
+    m1 = cv2.inRange(hsv, np.array([0, 80, 80]), np.array([10, 255, 255]))
+    m2 = cv2.inRange(hsv, np.array([170, 80, 80]), np.array([180, 255, 255]))
     red_mask = m1 | m2
     
-    # Процент красных пикселей в области вокруг текста
+    # Процент красных пикселей
     red_ratio = np.sum(red_mask > 0) / max(1, red_mask.size)
     
-    # Badge имеет красный фон, обычно >30% области красная
-    return red_ratio > 0.25
+    return red_ratio > 0.15  # Более 15% красного = красный текст
 
 def detect_badge_presence_ocr(img_bgr, date_bbox, debug=False):
     """
@@ -95,11 +86,11 @@ def detect_badge_presence_ocr(img_bgr, date_bbox, debug=False):
             text_bbox[3]
         )
         
-        # Проверяем что у текста КРАСНЫЙ ФОН (badge)
-        if not has_red_background(img_bgr, abs_text_bbox):
+        # Проверяем что текст КРАСНЫЙ
+        if not is_text_red(img_bgr, abs_text_bbox):
             continue
         
-        # Это badge! Цифра на красном фоне
+        # Это badge! Цифра + красный цвет
         # Проверяем расстояние от даты (берем ближайший)
         text_center_x = abs_text_bbox[0] + abs_text_bbox[2]/2
         date_right = x + w
