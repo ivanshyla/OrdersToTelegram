@@ -9,7 +9,7 @@ import cv2, requests
 from playwright.async_api import async_playwright
 from zoneinfo import ZoneInfo
 
-from badge_presence import find_date_bbox, target_date_str, detect_badge_presence, red_mask_union
+from badge_presence import find_date_bbox, target_date_str, detect_badge_presence
 from multi_crm_config import CRM_CONFIGS, TELEGRAM_BOT_TOKEN
 
 ROOT = Path(__file__).parent
@@ -169,9 +169,6 @@ class CRMMonitor:
         present, roi, dbg, red_ratio = detect_badge_presence(img, date_box, debug=True)
         
         # Сохраняем отладочные изображения
-        if roi:
-            rx,ry,rw,rh = roi
-            cv2.imwrite(png_path.replace(".png", f"_{self.city_key}_mask.png"), red_mask_union(img[ry:ry+rh, rx:rx+rw]))
         if dbg is not None:
             cv2.imwrite(png_path.replace(".png", f"_{self.city_key}_dbg.png"), dbg)
         
