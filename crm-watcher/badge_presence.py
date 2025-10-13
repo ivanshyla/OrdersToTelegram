@@ -5,10 +5,11 @@ reader = easyocr.Reader(["ru","en"], gpu=False, verbose=False)
 
 from zoneinfo import ZoneInfo
 
-def target_date_str(which):
-    now = dt.datetime.now(ZoneInfo("Europe/Warsaw"))
+def target_date_str(which, timezone="Europe/Warsaw"):
+    """Возвращает строку даты в формате DD.MM для указанного часового пояса"""
+    now = dt.datetime.now(ZoneInfo(timezone))
     d = now.date() + dt.timedelta(days=1 if which=="tomorrow" else 0)
-    # Возвращаем формат без ведущих нулей (как на сайте)
+    # Возвращаем формат без ведущих нулей для дня (как на сайте)
     return f"{d.day}.{d.month:02d}"
 
 def _bbox_from_quad(quad):
@@ -123,6 +124,13 @@ def detect_badge_presence_ocr(img_bgr, date_bbox, debug=False):
         return badge_found, (x1, y1, x2-x1, y2-y1), dbg, 0.0
     
     return badge_found, (x1, y1, x2-x1, y2-y1), None, 0.0
+
+def red_mask_union(img_bgr):
+    """Создает маску красных пикселей для отладки"""
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    m1 = cv2.inRange(hsv, np.array([0, 80, 80]), np.array([15, 255, 255]))
+    m2 = cv2.inRange(hsv, np.array([165, 80, 80]), np.array([180, 255, 255]))
+    return m1 | m2
 
 # Обратная совместимость - старое название функции
 def detect_badge_presence(img_bgr, date_bbox, debug=False):

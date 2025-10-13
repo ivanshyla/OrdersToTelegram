@@ -5,10 +5,11 @@ reader = easyocr.Reader(["ru","en"], gpu=False, verbose=False)
 
 from zoneinfo import ZoneInfo
 
-def target_date_str(which):
-    now = dt.datetime.now(ZoneInfo("Europe/Warsaw"))
+def target_date_str(which, timezone="Europe/Warsaw"):
+    """Возвращает строку даты в формате DD.MM для указанного часового пояса"""
+    now = dt.datetime.now(ZoneInfo(timezone))
     d = now.date() + dt.timedelta(days=1 if which=="tomorrow" else 0)
-    # Возвращаем формат без ведущих нулей (как на сайте)
+    # Возвращаем формат без ведущих нулей для дня (как на сайте)
     return f"{d.day}.{d.month:02d}"
 
 def _bbox_from_quad(quad):
@@ -142,4 +143,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

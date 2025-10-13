@@ -9,7 +9,7 @@ import cv2, requests
 from playwright.async_api import async_playwright
 from zoneinfo import ZoneInfo
 
-from badge_presence import find_date_bbox, target_date_str, detect_badge_presence
+from badge_presence import find_date_bbox, target_date_str, detect_badge_presence, red_mask_union
 from multi_crm_config import CRM_CONFIGS, TELEGRAM_BOT_TOKEN
 
 ROOT = Path(__file__).parent
@@ -158,17 +158,29 @@ class CRMMonitor:
         # Определяем какую дату проверять в зависимости от времени
         city_time = dt.datetime.now(ZoneInfo(self.config["timezone"]))
         current_hour = city_time.hour
+        current_time = city_time.strftime("%H:%M")
         
-        # Утром (7:30) проверяем СЕГОДНЯ, вечером (19-21) проверяем ЗАВТРА
-        if current_hour < 12:  # До полудня - проверяем сегодня
-            date_text = target_date_str("today")
-        else:  # После полудня - проверяем завтра
-            date_text = target_date_str("tomorrow")
+        # Проверяем только в часы уведомлений!
+        if current_hour not in self.config["notification_hours"]:
+            print(f"[{self.name}] ⏸️ Skipping check at {current_time} {self.config['timezone']} - not in notification hours {self.config['notification_hours']}")
+            return None, None, png_path  # Возвращаем None чтобы показать что проверка пропущена
+        
+        # Утром (7 час) проверяем СЕГОДНЯ, вечером (19-22) проверяем ЗАВТРА
+        if current_hour == 7:  # Утренняя проверка - сегодня
+            date_text = target_date_str("today", self.config["timezone"])
+        elif current_hour in [19, 20, 21, 22]:  # Вечерняя проверка - завтра
+            date_text = target_date_str("tomorrow", self.config["timezone"])
+        else:
+            print(f"[{self.name}] ⚠️ Unexpected notification hour: {current_hour}")
+            return None, None, png_path
         
         date_box = find_date_bbox(img, date_text)
         present, roi, dbg, red_ratio = detect_badge_presence(img, date_box, debug=True)
         
         # Сохраняем отладочные изображения
+        if roi:
+            rx,ry,rw,rh = roi
+            cv2.imwrite(png_path.replace(".png", f"_{self.city_key}_mask.png"), red_mask_union(img[ry:ry+rh, rx:rx+rw]))
         if dbg is not None:
             cv2.imwrite(png_path.replace(".png", f"_{self.city_key}_dbg.png"), dbg)
         
@@ -243,8 +255,10 @@ class CRMMonitor:
                 if not status_file.exists():
                     status_file.touch()
                     # Формируем текст в зависимости от времени проверки
-                    if current_hour < 12:
+                    if current_hour == 7:
                         day_label = "на сегодня"
+                    elif current_hour in [19, 20, 21, 22]:
+                        day_label = "на завтра"
                     else:
                         day_label = f"на {date_text}"
                     caption = f"⚠️ {day_label.capitalize()} есть неразобранные заказы. Проверьте CRM ({self.name})"
@@ -279,6 +293,18 @@ class CRMMonitor:
                 
                 png = await self.grab_screenshot()
                 present, date_text, png_path = self.check_badge_presence(png)
+                
+                # Если проверка пропущена (не в часы уведомлений)
+                if present is None and date_text is None:
+                    result = {
+                        "city": self.name,
+                        "skipped": True,
+                        "reason": "Not in notification hours",
+                        "png": png_path
+                    }
+                    print(f"[{self.name}] RESULT: {result}")
+                    return result
+                
                 sent = self.send_status_message(date_text, present, png_path)
                 
                 result = {
@@ -336,6 +362,8 @@ async def monitor_all_cities():
                 city = result.get("city", "Unknown")
                 if "error" in result:
                     print(f"❌ {city}: {result['error']}")
+                elif result.get("skipped"):
+                    print(f"⏸️ {city}: Пропущено - {result.get('reason', 'Unknown reason')}")
                 else:
                     status = "🚨 ПРОБЛЕМЫ" if result["present"] else "✅ ВСЕ ОК"
                     sent_status = "📤 ОТПРАВЛЕНО" if result["sent"] else "📭 НЕ ОТПРАВЛЕНО"
