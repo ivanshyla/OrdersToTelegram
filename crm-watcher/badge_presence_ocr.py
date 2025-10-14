@@ -26,21 +26,47 @@ def find_date_bbox(img_bgr, date_text):
             best=_bbox_from_quad(box); best_conf=conf
     return best
 
-def is_text_red(img_bgr, text_bbox):
-    """Проверяет, является ли текст красным"""
+def is_badge(img_bgr, text_bbox):
+    """Проверяет, является ли это badge (красный круглый фон с белым текстом)"""
     x, y, w, h = text_bbox
-    roi = img_bgr[y:y+h, x:x+w]
     
-    # HSV маска для красного
+    # Расширяем область чтобы захватить весь badge фон
+    padding = max(5, int(max(w, h) * 0.4))
+    x1 = max(0, x - padding)
+    y1 = max(0, y - padding)
+    x2 = min(img_bgr.shape[1], x + w + padding)
+    y2 = min(img_bgr.shape[0], y + h + padding)
+    
+    roi = img_bgr[y1:y2, x1:x2]
+    
+    if roi.size == 0:
+        return False
+    
+    # HSV маска для НАСЫЩЕННОГО красного (badge)
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    m1 = cv2.inRange(hsv, np.array([0, 80, 80]), np.array([10, 255, 255]))
-    m2 = cv2.inRange(hsv, np.array([170, 80, 80]), np.array([180, 255, 255]))
+    # Более строгие параметры для badge - яркий насыщенный красный
+    m1 = cv2.inRange(hsv, np.array([0, 120, 120]), np.array([10, 255, 255]))
+    m2 = cv2.inRange(hsv, np.array([170, 120, 120]), np.array([180, 255, 255]))
     red_mask = m1 | m2
     
-    # Процент красных пикселей
-    red_ratio = np.sum(red_mask > 0) / max(1, red_mask.size)
+    # Маска для белого текста внутри badge
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    _, white_mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
     
-    return red_ratio > 0.15  # Более 15% красного = красный текст
+    # Процент красного и белого
+    total_pixels = roi.shape[0] * roi.shape[1]
+    red_ratio = np.sum(red_mask > 0) / total_pixels
+    white_ratio = np.sum(white_mask > 0) / total_pixels
+    
+    # Badge должен иметь:
+    # 1. Достаточно много красного фона (20-70%)
+    # 2. Немного белого текста (5-30%)
+    # 3. Соотношение красного к белому > 1.5
+    is_badge = (0.20 < red_ratio < 0.70 and 
+                0.05 < white_ratio < 0.30 and 
+                red_ratio / max(0.01, white_ratio) > 1.5)
+    
+    return is_badge
 
 def detect_badge_presence_ocr(img_bgr, date_bbox, debug=False):
     """
@@ -87,11 +113,11 @@ def detect_badge_presence_ocr(img_bgr, date_bbox, debug=False):
             text_bbox[3]
         )
         
-        # Проверяем что текст КРАСНЫЙ
-        if not is_text_red(img_bgr, abs_text_bbox):
+        # Проверяем что это BADGE (красный фон + белая цифра)
+        if not is_badge(img_bgr, abs_text_bbox):
             continue
         
-        # Это badge! Цифра + красный цвет
+        # Это badge! Цифра на красном фоне
         # Проверяем расстояние от даты (берем ближайший)
         text_center_x = abs_text_bbox[0] + abs_text_bbox[2]/2
         date_right = x + w
