@@ -165,14 +165,11 @@ class CRMMonitor:
             print(f"[{self.name}] ⏸️ Skipping check at {current_time} {self.config['timezone']} - not in notification hours {self.config['notification_hours']}")
             return None, None, png_path  # Возвращаем None чтобы показать что проверка пропущена
         
-        # Утром (7 час) проверяем СЕГОДНЯ, вечером (19-22) проверяем ЗАВТРА
-        if current_hour == 7:  # Утренняя проверка - сегодня
+        # До 12:00 проверяем СЕГОДНЯ, после 12:00 проверяем ЗАВТРА
+        if current_hour < 12:  # Утренняя проверка - сегодня
             date_text = target_date_str("today", self.config["timezone"])
-        elif current_hour in [19, 20, 21, 22]:  # Вечерняя проверка - завтра
+        else:  # Вечерняя/дневная проверка - завтра
             date_text = target_date_str("tomorrow", self.config["timezone"])
-        else:
-            print(f"[{self.name}] ⚠️ Unexpected notification hour: {current_hour}")
-            return None, None, png_path
         
         date_box = find_date_bbox(img, date_text)
         present, roi, dbg, red_ratio = detect_badge_presence(img, date_box, debug=True)
