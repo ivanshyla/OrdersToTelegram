@@ -26,12 +26,12 @@ def find_date_bbox(img_bgr, date_text):
             best=_bbox_from_quad(box); best_conf=conf
     return best
 
-def is_badge(img_bgr, text_bbox):
-    """Проверяет, является ли это badge (красный круглый фон с белым текстом)"""
+def has_red_background(img_bgr, text_bbox):
+    """Проверяет, есть ли КРАСНЫЙ или ОРАНЖЕВЫЙ ФОН вокруг текста (badge)"""
     x, y, w, h = text_bbox
     
-    # Расширяем область чтобы захватить весь badge фон
-    padding = max(5, int(max(w, h) * 0.4))
+    # Расширяем область вокруг текста чтобы захватить фон badge
+    padding = max(5, int(h * 0.3))
     x1 = max(0, x - padding)
     y1 = max(0, y - padding)
     x2 = min(img_bgr.shape[1], x + w + padding)
@@ -39,34 +39,21 @@ def is_badge(img_bgr, text_bbox):
     
     roi = img_bgr[y1:y2, x1:x2]
     
-    if roi.size == 0:
-        return False
-    
-    # HSV маска для НАСЫЩЕННОГО красного (badge)
+    # HSV маска для КРАСНОГО и ОРАНЖЕВОГО фона
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    # Более строгие параметры для badge - яркий насыщенный красный
-    m1 = cv2.inRange(hsv, np.array([0, 120, 120]), np.array([10, 255, 255]))
-    m2 = cv2.inRange(hsv, np.array([170, 120, 120]), np.array([180, 255, 255]))
-    red_mask = m1 | m2
+    # Красный: 0-15 и 165-180
+    m1 = cv2.inRange(hsv, np.array([0, 80, 80]), np.array([15, 255, 255]))
+    m2 = cv2.inRange(hsv, np.array([165, 80, 80]), np.array([180, 255, 255]))
+    # ОРАНЖЕВЫЙ: 10-25 (между красным и желтым)
+    m3 = cv2.inRange(hsv, np.array([10, 100, 100]), np.array([25, 255, 255]))
     
-    # Маска для белого текста внутри badge
-    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    _, white_mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+    red_orange_mask = m1 | m2 | m3
     
-    # Процент красного и белого
-    total_pixels = roi.shape[0] * roi.shape[1]
-    red_ratio = np.sum(red_mask > 0) / total_pixels
-    white_ratio = np.sum(white_mask > 0) / total_pixels
+    # Процент красно-оранжевых пикселей в области вокруг текста
+    red_orange_ratio = np.sum(red_orange_mask > 0) / max(1, red_orange_mask.size)
     
-    # Badge должен иметь:
-    # 1. Достаточно много красного фона (20-70%)
-    # 2. Немного белого текста (5-30%)
-    # 3. Соотношение красного к белому > 1.5
-    is_badge = (0.20 < red_ratio < 0.70 and 
-                0.05 < white_ratio < 0.30 and 
-                red_ratio / max(0.01, white_ratio) > 1.5)
-    
-    return is_badge
+    # Badge имеет красный/оранжевый фон, обычно >25% области
+    return red_orange_ratio > 0.20
 
 def detect_badge_presence_ocr(img_bgr, date_bbox, debug=False):
     """
@@ -113,8 +100,8 @@ def detect_badge_presence_ocr(img_bgr, date_bbox, debug=False):
             text_bbox[3]
         )
         
-        # Проверяем что это BADGE (красный фон + белая цифра)
-        if not is_badge(img_bgr, abs_text_bbox):
+        # Проверяем что у текста КРАСНЫЙ ФОН (badge)
+        if not has_red_background(img_bgr, abs_text_bbox):
             continue
         
         # Это badge! Цифра на красном фоне
