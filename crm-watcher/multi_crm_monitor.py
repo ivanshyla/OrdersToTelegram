@@ -137,11 +137,11 @@ class CRMMonitor:
                 await page.goto(self.config["crm_url"], wait_until="domcontentloaded", timeout=30000)
                 await self.ensure_dashboard(page)
                 
-                # Делаем скриншот только верхней части с календарем
+                # Делаем скриншот только календаря (без статистики внизу)
                 await page.screenshot(
                     path=str(out_png), 
                     full_page=False,
-                    clip={'x': 0, 'y': 0, 'width': 1440, 'height': 800}
+                    clip={'x': 0, 'y': 0, 'width': 1440, 'height': 450}
                 )
                 print(f"[{self.name}] Screenshot saved: {out_png}")
             finally:
