@@ -27,7 +27,7 @@ def find_date_bbox(img_bgr, date_text):
     return best
 
 def has_red_background(img_bgr, text_bbox):
-    """Проверяет, есть ли КРАСНЫЙ или ОРАНЖЕВЫЙ ФОН вокруг текста (badge)"""
+    """Проверяет, есть ли КРАСНЫЙ ФОН вокруг текста (badge)"""
     x, y, w, h = text_bbox
     
     # Расширяем область вокруг текста чтобы захватить фон badge
@@ -39,26 +39,23 @@ def has_red_background(img_bgr, text_bbox):
     
     roi = img_bgr[y1:y2, x1:x2]
     
-    # HSV маска для КРАСНОГО и ОРАНЖЕВОГО фона
+    # HSV маска для красного ФОНА
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    # Красный: 0-15 и 165-180
     m1 = cv2.inRange(hsv, np.array([0, 80, 80]), np.array([15, 255, 255]))
     m2 = cv2.inRange(hsv, np.array([165, 80, 80]), np.array([180, 255, 255]))
-    # ОРАНЖЕВЫЙ: 10-25 (между красным и желтым)
-    m3 = cv2.inRange(hsv, np.array([10, 100, 100]), np.array([25, 255, 255]))
+    red_mask = m1 | m2
     
-    red_orange_mask = m1 | m2 | m3
+    # Процент красных пикселей в области вокруг текста
+    red_ratio = np.sum(red_mask > 0) / max(1, red_mask.size)
     
-    # Процент красно-оранжевых пикселей в области вокруг текста
-    red_orange_ratio = np.sum(red_orange_mask > 0) / max(1, red_orange_mask.size)
-    
-    # Badge имеет красный/оранжевый фон, обычно >25% области
-    return red_orange_ratio > 0.20
+    # Badge имеет красный фон, обычно >30% области красная
+    return red_ratio > 0.25
 
-def detect_badge_presence_ocr(img_bgr, date_bbox, debug=False):
+def extract_card_numbers(img_bgr, date_bbox, debug=False):
     """
-    Новый подход: ищем ЦИФРЫ в красном тексте рядом с датой
-    Badge всегда содержит число (количество заказов)
+    ПРАВИЛЬНЫЙ подход: извлекает числа из карточки с датой.
+    Читает "Кол-во заказов" и "Подтвержденные заказы".
+    Если они не равны - есть неразобранные заказы.
     """
     if not date_bbox:
         return False, None, None, 0.0
@@ -66,68 +63,139 @@ def detect_badge_presence_ocr(img_bgr, date_bbox, debug=False):
     H, W = img_bgr.shape[:2]
     x, y, w, h = date_bbox
     
-    # Область поиска справа от даты (умеренная)
-    y1 = max(0, int(y - 1.0*h))
-    y2 = min(H, int(y + 2.0*h))
-    x1 = int(x + w)  # начинаем сразу после даты
-    x2 = min(W, int(x + w + w*8))  # не слишком далеко
+    # Расширяем область чтобы захватить всю карточку
+    # Карточка находится ВЕРТИКАЛЬНО под датой
+    # Используем ширину блока даты + немного больше для захвата всей карточки
     
-    roi = img_bgr[y1:y2, x1:x2]
+    # Карточка должна быть примерно в 2.5 раза шире чем дата
+    card_width = int(w * 2.8)
     
-    # OCR в области справа от даты
+    # Начинаем от ЛЕВОГО края даты и идем вниз
+    x1 = max(0, x)  # От левого края даты
+    y1 = max(0, y)  # От верха даты
+    x2 = min(W, x + card_width)  # Ширина пропорциональна дате
+    y2 = min(H, y + 280)  # Высота карточки вниз от даты
+    
+    card_roi = img_bgr[y1:y2, x1:x2]
+    
+    # ПРЕДОБРАБОТКА для лучшего распознавания мелких чисел
+    # Увеличиваем изображение в 2 раза
+    card_roi_upscaled = cv2.resize(card_roi, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+    
+    # Улучшаем контраст (CLAHE)
+    gray = cv2.cvtColor(card_roi_upscaled, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    enhanced = clahe.apply(gray)
+    card_roi_enhanced = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+    
+    # OCR на улучшенной карточке
     try:
-        ocr_results = reader.readtext(roi, detail=1, paragraph=False)
+        ocr_results = reader.readtext(card_roi_enhanced, detail=1, paragraph=False)
     except:
         return False, (x1, y1, x2-x1, y2-y1), None, 0.0
     
-    # Ищем ЦИФРЫ в красном тексте
-    badge_found = False
-    best_badge = None
-    best_distance = float('inf')
+    # Ищем ВСЕ числа в карточке (любого размера)
+    numbers_found = []
     
     for box, text, conf in ocr_results:
-        # Проверяем что это цифра
+        # Ищем ЧИСЛА (двузначные и трехзначные)
         text_clean = re.sub(r'\s+', '', str(text))
-        if not re.match(r'^\d+$', text_clean):
+        if not re.match(r'^\d{2,3}$', text_clean):
             continue
         
-        # Получаем bbox текста
+        number = int(text_clean)
+        
+        # Получаем позицию числа (учитываем что изображение увеличено в 2x)
         text_bbox = _bbox_from_quad(box)
+        # Масштабируем обратно к оригинальному размеру
+        text_bbox_orig = (
+            text_bbox[0] // 2,
+            text_bbox[1] // 2,
+            text_bbox[2] // 2,
+            text_bbox[3] // 2
+        )
         abs_text_bbox = (
-            x1 + text_bbox[0],
-            y1 + text_bbox[1],
-            text_bbox[2],
-            text_bbox[3]
+            x1 + text_bbox_orig[0],
+            y1 + text_bbox_orig[1],
+            text_bbox_orig[2],
+            text_bbox_orig[3]
         )
         
-        # Проверяем что у текста КРАСНЫЙ ФОН (badge)
-        if not has_red_background(img_bgr, abs_text_bbox):
+        # Пропускаем очень маленькие числа (высота < 8px в оригинале)
+        if text_bbox_orig[3] < 8:
             continue
         
-        # Это badge! Цифра на красном фоне
-        # Проверяем расстояние от даты (берем ближайший)
-        text_center_x = abs_text_bbox[0] + abs_text_bbox[2]/2
-        date_right = x + w
-        distance = abs(text_center_x - date_right)
+        numbers_found.append({
+            'value': number,
+            'bbox': abs_text_bbox,
+            'y_pos': abs_text_bbox[1],
+            'x_pos': abs_text_bbox[0],
+            'height': text_bbox_orig[3],
+            'conf': conf
+        })
+    
+    # Сортируем по вертикальной позиции (сверху вниз)
+    numbers_found.sort(key=lambda n: n['y_pos'])
+    
+    # Теперь нужно найти два РАЗНЫХ числа
+    # Первое - "Кол-во заказов" (черный блок, верх)
+    # Второе - "Подтвержденные заказы" (зеленый блок, ниже)
+    
+    has_unprocessed = False
+    total_orders = None
+    confirmed_orders = None
+    
+    # Убираем дубликаты - берем уникальные значения
+    unique_numbers = []
+    seen_values = set()
+    for num in numbers_found:
+        if num['value'] not in seen_values:
+            seen_values.add(num['value'])
+            unique_numbers.append(num)
+    
+    if len(unique_numbers) >= 2:
+        # Берем первые два разных числа сверху вниз
+        total_orders = unique_numbers[0]['value']
+        confirmed_orders = unique_numbers[1]['value']
+    elif len(unique_numbers) == 1 and len(numbers_found) >= 2:
+        # Если все числа одинаковые - значит все заказы подтверждены
+        total_orders = unique_numbers[0]['value']
+        confirmed_orders = unique_numbers[0]['value']
+    
+    if total_orders is not None and confirmed_orders is not None:
         
-        if distance < best_distance:
-            badge_found = True
-            best_badge = abs_text_bbox
-            best_distance = distance
+        # Если подтвержденных меньше чем всего - есть неразобранные
+        has_unprocessed = (confirmed_orders < total_orders)
+        
+        if debug:
+            dbg = img_bgr.copy()
+            # Рамка даты
+            cv2.rectangle(dbg, (x, y), (x+w, y+h), (255, 255, 0), 2)
+            # Рамка карточки
+            cv2.rectangle(dbg, (x1, y1), (x2, y2), (200, 200, 0), 2)
+            # Маркируем найденные числа
+            for i, num_info in enumerate(unique_numbers[:2]):
+                bx, by, bw, bh = num_info['bbox']
+                color = (0, 0, 255) if i == 0 else (0, 255, 0)  # Красный для total, зелёный для confirmed
+                cv2.rectangle(dbg, (bx, by), (bx+bw, by+bh), color, 2)
+                # Подписываем
+                label = f"Total:{num_info['value']}" if i == 0 else f"Conf:{num_info['value']}"
+                cv2.putText(dbg, label, (bx, by-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            
+            # Пишем результат
+            result_text = f"Unprocessed: {has_unprocessed} ({total_orders-confirmed_orders} orders)" if has_unprocessed else "All OK"
+            cv2.putText(dbg, result_text, (x1, y1-20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            
+            return has_unprocessed, (x1, y1, x2-x1, y2-y1), dbg, 0.0
     
-    if debug and badge_found:
-        dbg = img_bgr.copy()
-        # Рамка даты
-        cv2.rectangle(dbg, (x, y), (x+w, y+h), (255, 255, 0), 2)
-        # ROI
-        cv2.rectangle(dbg, (x1, y1), (x2, y2), (200, 200, 0), 1)
-        # Badge
-        if best_badge:
-            bx, by, bw, bh = best_badge
-            cv2.rectangle(dbg, (bx, by), (bx+bw, by+bh), (0, 0, 255), 3)
-        return badge_found, (x1, y1, x2-x1, y2-y1), dbg, 0.0
-    
-    return badge_found, (x1, y1, x2-x1, y2-y1), None, 0.0
+    return has_unprocessed, (x1, y1, x2-x1, y2-y1), None, 0.0
+
+def detect_badge_presence_ocr(img_bgr, date_bbox, debug=False):
+    """
+    Проверяет наличие неразобранных заказов через сравнение чисел в карточке.
+    Читает "Кол-во заказов" vs "Подтвержденные заказы".
+    """
+    return extract_card_numbers(img_bgr, date_bbox, debug)
 
 def red_mask_union(img_bgr):
     """Создает маску красных пикселей для отладки"""
