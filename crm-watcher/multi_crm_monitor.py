@@ -160,11 +160,6 @@ class CRMMonitor:
         current_hour = city_time.hour
         current_time = city_time.strftime("%H:%M")
         
-        # Проверяем только в часы уведомлений!
-        if current_hour not in self.config["notification_hours"]:
-            print(f"[{self.name}] ⏸️ Skipping check at {current_time} {self.config['timezone']} - not in notification hours {self.config['notification_hours']}")
-            return None, None, png_path  # Возвращаем None чтобы показать что проверка пропущена
-        
         # До 12:00 проверяем СЕГОДНЯ, после 12:00 проверяем ЗАВТРА
         if current_hour < 12:  # Утренняя проверка - сегодня
             date_text = target_date_str("today", self.config["timezone"])
