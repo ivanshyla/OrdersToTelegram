@@ -1,9 +1,17 @@
 import cv2, numpy as np, re, argparse, datetime as dt
 import easyocr
 
-reader = easyocr.Reader(["ru","en"], gpu=False, verbose=False)
-
 from zoneinfo import ZoneInfo
+
+# Lazy initialization of OCR reader
+_reader = None
+
+def get_reader():
+    """Lazy initialization of EasyOCR reader to avoid downloading models on import"""
+    global _reader
+    if _reader is None:
+        _reader = easyocr.Reader(["ru","en"], gpu=False, verbose=False)
+    return _reader
 
 def target_date_str(which, timezone="Europe/Warsaw"):
     """Возвращает строку даты в формате DD.MM для указанного часового пояса"""
@@ -18,7 +26,7 @@ def _bbox_from_quad(quad):
     return int(x1),int(y1),int(x2-x1),int(y2-y1)
 
 def find_date_bbox(img_bgr, date_text):
-    res = reader.readtext(img_bgr, detail=1, paragraph=False)
+    res = get_reader().readtext(img_bgr, detail=1, paragraph=False)
     wanted = re.sub(r"\s+","", date_text)
     best=None; best_conf=0.0
     for box,text,conf in res:
@@ -90,7 +98,7 @@ def extract_card_numbers(img_bgr, date_bbox, debug=False):
     
     # OCR на улучшенной карточке
     try:
-        ocr_results = reader.readtext(card_roi_enhanced, detail=1, paragraph=False)
+        ocr_results = get_reader().readtext(card_roi_enhanced, detail=1, paragraph=False)
     except:
         return False, (x1, y1, x2-x1, y2-y1), None, 0.0
     

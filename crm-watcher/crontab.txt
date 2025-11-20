@@ -1,0 +1,29 @@
+# Мониторинг CRM - 4 раза в день по варшавскому времени
+# 7:30 утра - проверка на СЕГОДНЯ
+30 7 * * * cd /path/to/OrdersToTelegram/crm-watcher && /path/to/venv/bin/python multi_crm_monitor.py >> /var/log/crm-monitor.log 2>&1
+
+# 19:00 вечера - проверка на ЗАВТРА
+0 19 * * * cd /path/to/OrdersToTelegram/crm-watcher && /path/to/venv/bin/python multi_crm_monitor.py >> /var/log/crm-monitor.log 2>&1
+
+# 20:00 вечера - проверка на ЗАВТРА
+0 20 * * * cd /path/to/OrdersToTelegram/crm-watcher && /path/to/venv/bin/python multi_crm_monitor.py >> /var/log/crm-monitor.log 2>&1
+
+# 21:00 вечера - проверка на ЗАВТРА
+0 21 * * * cd /path/to/OrdersToTelegram/crm-watcher && /path/to/venv/bin/python multi_crm_monitor.py >> /var/log/crm-monitor.log 2>&1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
