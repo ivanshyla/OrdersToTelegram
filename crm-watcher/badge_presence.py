@@ -34,65 +34,84 @@ def find_date_bbox(img_bgr, date_text):
             best=_bbox_from_quad(box); best_conf=conf
     return best
 
-def detect_yellow_warning(img_bgr, debug=False):
+def detect_red_badge_near_date(img_bgr, date_bbox, debug=False):
     """
-    Ищем ЖЕЛТОЕ ПРЕДУПРЕЖДЕНИЕ "Есть незавершенные заказы"
-    Это и есть те самые "неразобранные заказы"!
+    Ищем КРАСНЫЙ BADGE С ЦИФРОЙ рядом с датой.
+    Это количество неразобранных заказов для КОНКРЕТНОЙ даты.
     """
+    if not date_bbox:
+        return False, None, None, 0.0
+    
     H, W = img_bgr.shape[:2]
+    x, y, w, h = date_bbox
     
-    # Ищем желтый блок предупреждения
-    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    # Область поиска СПРАВА и СВЕРХУ от даты (где обычно badge)
+    # Badge находится в правом верхнем углу карточки
+    search_x1 = max(0, x + w - 20)  # Начинаем справа от даты
+    search_y1 = max(0, y - 30)  # Чуть выше даты
+    search_x2 = min(W, x + w + 80)  # Не слишком далеко вправо
+    search_y2 = min(H, y + 50)  # Не слишком далеко вниз
     
-    # Маска для желтого цвета
-    yellow_mask = cv2.inRange(hsv, np.array([20, 100, 100]), np.array([35, 255, 255]))
+    roi = img_bgr[search_y1:search_y2, search_x1:search_x2]
     
-    # Находим контуры
-    contours, _ = cv2.findContours(yellow_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Ищем красный цвет (badge)
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    m1 = cv2.inRange(hsv, np.array([0, 150, 150]), np.array([10, 255, 255]))
+    m2 = cv2.inRange(hsv, np.array([170, 150, 150]), np.array([180, 255, 255]))
+    red_mask = m1 | m2
+    
+    # Находим контуры красных областей
+    contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
     for contour in contours:
         area = cv2.contourArea(contour)
-        # Предупреждение - это большой блок
-        if area < 5000:
+        # Badge компактный (300-3000 пикселей)
+        if area < 300 or area > 3000:
             continue
         
-        x, y, w, h = cv2.boundingRect(contour)
+        bx, by, bw, bh = cv2.boundingRect(contour)
         
-        # Проверяем что это широкий блок (предупреждение)
-        if w < 200 or h < 30:
+        # Badge примерно квадратный или круглый
+        aspect_ratio = bw / float(bh) if bh > 0 else 0
+        if aspect_ratio < 0.7 or aspect_ratio > 1.5:
             continue
         
-        aspect_ratio = w / float(h)
-        if aspect_ratio < 3:  # Предупреждение широкое
-            continue
+        # НАШЛИ красный badge!
+        abs_bbox = (search_x1 + bx, search_y1 + by, bw, bh)
         
-        # НАШЛИ желтое предупреждение!
         if debug:
             dbg = img_bgr.copy()
-            cv2.rectangle(dbg, (x, y), (x+w, y+h), (0, 255, 255), 3)
-            cv2.putText(dbg, "NEZAVERSHENNYYE!", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-            return True, (x, y, w, h), dbg
+            cv2.rectangle(dbg, (x, y), (x+w, y+h), (255, 255, 0), 2)  # Дата
+            cv2.rectangle(dbg, (search_x1, search_y1), (search_x2, search_y2), (200, 200, 0), 1)  # ROI
+            cv2.rectangle(dbg, (abs_bbox[0], abs_bbox[1]), 
+                         (abs_bbox[0]+abs_bbox[2], abs_bbox[1]+abs_bbox[3]), (0, 0, 255), 3)  # Badge
+            cv2.putText(dbg, "RED BADGE FOUND!", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            return True, abs_bbox, dbg, 0.0
         
-        return True, (x, y, w, h), None
+        return True, abs_bbox, None, 0.0
     
     if debug:
-        return False, None, img_bgr.copy()
+        dbg = img_bgr.copy()
+        cv2.rectangle(dbg, (x, y), (x+w, y+h), (255, 255, 0), 2)
+        cv2.rectangle(dbg, (search_x1, search_y1), (search_x2, search_y2), (200, 200, 0), 1)
+        cv2.putText(dbg, "NO BADGE", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        return False, None, dbg, 0.0
     
-    return False, None, None
+    return False, None, None, 0.0
 
 def detect_badge_presence_ocr(img_bgr, date_bbox, debug=False):
     """
-    Проверяет наличие НЕЗАВЕРШЕННЫХ (неразобранных) заказов.
-    Ищет желтое предупреждение на экране.
+    Проверяет наличие КРАСНОГО BADGE рядом с датой.
+    Badge показывает количество неразобранных заказов для КОНКРЕТНОЙ даты.
     """
-    warning_found, warning_bbox, dbg_img = detect_yellow_warning(img_bgr, debug)
+    badge_found, badge_bbox, dbg_img, _ = detect_red_badge_near_date(img_bgr, date_bbox, debug)
     
-    if warning_found:
-        print(f"    ⚠️  НАЙДЕНО ЖЕЛТОЕ ПРЕДУПРЕЖДЕНИЕ - есть незавершенные заказы!")
+    if badge_found:
+        print(f"    🔴 НАЙДЕН КРАСНЫЙ BADGE рядом с датой - есть неразобранные заказы!")
     else:
-        print(f"    ✅ Желтого предупреждения нет - все заказы разобраны")
+        print(f"    ✅ Красного badge нет - все заказы разобраны")
     
-    return warning_found, warning_bbox, dbg_img, 0.0
+    return badge_found, badge_bbox, dbg_img, 0.0
 
 # Обратная совместимость
 def detect_badge_presence(img_bgr, date_bbox, debug=False):
