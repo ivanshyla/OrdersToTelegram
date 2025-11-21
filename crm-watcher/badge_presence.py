@@ -105,9 +105,13 @@ def extract_card_numbers(img_bgr, date_bbox, debug=False):
     # Ищем ВСЕ числа в карточке (любого размера)
     numbers_found = []
     
+    print(f"    🔍 OCR результаты для даты {date_text if 'date_text' in locals() else 'unknown'}:")
+    
     for box, text, conf in ocr_results:
         # Ищем ЧИСЛА (двузначные и трехзначные)
         text_clean = re.sub(r'\s+', '', str(text))
+        print(f"       Найден текст: '{text}' (clean: '{text_clean}', conf={conf:.2f})")
+        
         if not re.match(r'^\d{2,3}$', text_clean):
             continue
         
@@ -174,6 +178,13 @@ def extract_card_numbers(img_bgr, date_bbox, debug=False):
         
         # Если подтвержденных меньше чем всего - есть неразобранные
         has_unprocessed = (confirmed_orders < total_orders)
+        
+        # Логируем что нашли
+        print(f"    📊 OCR прочитал: Всего={total_orders}, Подтверждено={confirmed_orders}")
+        if has_unprocessed:
+            print(f"    ⚠️  Неразобранных: {total_orders - confirmed_orders}")
+        else:
+            print(f"    ✅ Все заказы подтверждены")
         
         if debug:
             dbg = img_bgr.copy()
