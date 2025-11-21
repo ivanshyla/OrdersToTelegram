@@ -45,12 +45,14 @@ def detect_red_badge_near_date(img_bgr, date_bbox, debug=False):
     H, W = img_bgr.shape[:2]
     x, y, w, h = date_bbox
     
-    # Область поиска СПРАВА и СВЕРХУ от даты (где обычно badge)
-    # Badge находится в правом верхнем углу карточки
-    search_x1 = max(0, x + w - 20)  # Начинаем справа от даты
-    search_y1 = max(0, y - 30)  # Чуть выше даты
-    search_x2 = min(W, x + w + 80)  # Не слишком далеко вправо
-    search_y2 = min(H, y + 50)  # Не слишком далеко вниз
+    # Область поиска: ПРАВЫЙ ВЕРХНИЙ УГОЛ карточки
+    # Карточка шириной примерно 250px, дата слева вверху
+    # Badge в правом верхнем углу карточки (напротив даты)
+    card_width = 250
+    search_x1 = max(0, x + card_width - 80)  # Правый верхний угол карточки
+    search_y1 = max(0, y - 10)  # На уровне даты
+    search_x2 = min(W, x + card_width + 20)  # Немного за край
+    search_y2 = min(H, y + 60)  # Вниз от даты
     
     roi = img_bgr[search_y1:search_y2, search_x1:search_x2]
     
