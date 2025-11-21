@@ -59,7 +59,69 @@ def has_red_background(img_bgr, text_bbox):
     # Badge имеет красный фон, обычно >30% области красная
     return red_ratio > 0.25
 
-def extract_card_numbers(img_bgr, date_bbox, debug=False):
+def detect_yellow_warning(img_bgr, debug=False):
+    """
+    Ищем ЖЕЛТОЕ ПРЕДУПРЕЖДЕНИЕ "Есть незавершенные заказы"
+    Это и есть те самые "неразобранные заказы"!
+    """
+    H, W = img_bgr.shape[:2]
+    
+    # Ищем желтый блок предупреждения
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    
+    # Маска для желтого цвета
+    yellow_mask = cv2.inRange(hsv, np.array([20, 100, 100]), np.array([35, 255, 255]))
+    
+    # Находим контуры
+    contours, _ = cv2.findContours(yellow_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        # Предупреждение - это большой блок
+        if area < 5000:
+            continue
+        
+        x, y, w, h = cv2.boundingRect(contour)
+        
+        # Проверяем что это широкий блок (предупреждение)
+        if w < 200 or h < 30:
+            continue
+        
+        aspect_ratio = w / float(h)
+        if aspect_ratio < 3:  # Предупреждение широкое
+            continue
+        
+        # НАШЛИ желтое предупреждение!
+        if debug:
+            dbg = img_bgr.copy()
+            cv2.rectangle(dbg, (x, y), (x+w, y+h), (0, 255, 255), 3)
+            cv2.putText(dbg, "NEZAVERSHENNYYE!", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+            return True, (x, y, w, h), dbg
+        
+        return True, (x, y, w, h), None
+    
+    if debug:
+        return False, None, img_bgr.copy()
+    
+    return False, None, None
+
+def detect_badge_presence_ocr(img_bgr, date_bbox, debug=False):
+    """
+    Проверяет наличие НЕЗАВЕРШЕННЫХ (неразобранных) заказов.
+    Ищет желтое предупреждение на экране.
+    """
+    warning_found, warning_bbox, dbg_img = detect_yellow_warning(img_bgr, debug)
+    
+    if warning_found:
+        print(f"    ⚠️  НАЙДЕНО ЖЕЛТОЕ ПРЕДУПРЕЖДЕНИЕ - есть незавершенные заказы!")
+    else:
+        print(f"    ✅ Желтого предупреждения нет - все заказы разобраны")
+    
+    return warning_found, warning_bbox, dbg_img, 0.0
+
+# Обратная совместимость
+def detect_badge_presence(img_bgr, date_bbox, debug=False):
+    return detect_badge_presence_ocr(img_bgr, date_bbox, debug)
     """
     ПРАВИЛЬНЫЙ подход: извлекает числа из карточки с датой.
     Читает "Кол-во заказов" и "Подтвержденные заказы".
